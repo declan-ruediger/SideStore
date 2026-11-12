@@ -11,6 +11,7 @@
 
 import Foundation
 import UIKit
+import SideSign
 
 enum JailbreakMode {
     /// UserDefaults key allowing the user to force-disable the JB pipeline
@@ -102,43 +103,85 @@ extension JailbreakMode {
     /// Throws an OperationError-style failure including stderr on non-zero exit.
     @discardableResult
     static func runTool(atPath path: String, arguments: [String]) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = arguments
+        // Foundation.Process is not available in this iOS app target, so the
+        // tool is spawned with posix_spawn, capturing stdout/stderr through
+        // files instead of pipes.
+        let scratch = JailbreakMode.scratchDirectory
+        let token = UUID().uuidString
+        let stdoutURL = scratch.appendingPathComponent("jb-tool-\(token)-out.txt")
+        let stderrURL = scratch.appendingPathComponent("jb-tool-\(token)-err.txt")
+        defer {
+            try? FileManager.default.removeItem(at: stdoutURL)
+            try? FileManager.default.removeItem(at: stderrURL)
+        }
 
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        // Keep the child away from UI systems it doesn't need.
-        process.environment = ["TMPDIR": JailbreakMode.scratchDirectory.path]
-
-        do {
-            try process.run()
-        } catch {
+        let outFD = Darwin.open(stdoutURL.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+        guard outFD >= 0 else {
             throw OperationError.invalidParameters(
-                "JailbreakMode: failed to launch '\(path)': \(error)"
+                "JailbreakMode: cannot open stdout capture file for '\(path)'"
+            )
+        }
+        let errFD = Darwin.open(stderrURL.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+        guard errFD >= 0 else {
+            Darwin.close(outFD)
+            throw OperationError.invalidParameters(
+                "JailbreakMode: cannot open stderr capture file for '\(path)'"
+            )
+        }
+        defer {
+            Darwin.close(outFD)
+            Darwin.close(errFD)
+        }
+
+        var actions = posix_spawn_file_actions_t()
+        guard posix_spawn_file_actions_init(&actions) == 0 else {
+            throw OperationError.invalidParameters(
+                "JailbreakMode: posix_spawn_file_actions_init failed for '\(path)'"
+            )
+        }
+        posix_spawn_file_actions_adddup2(&actions, outFD, STDOUT_FILENO)
+        posix_spawn_file_actions_adddup2(&actions, errFD, STDERR_FILENO)
+        defer { posix_spawn_file_actions_destroy(&actions) }
+
+        var argv: [UnsafeMutablePointer<CChar>?] = ([path] + arguments).map { strdup($0) }
+        argv.append(nil)
+        var envp: [UnsafeMutablePointer<CChar>?] = [
+            strdup("TMPDIR=\(scratch.path)"),
+            strdup("PATH=/usr/bin:/bin:/usr/local/bin"),
+            strdup("HOME=\(NSHomeDirectory())")
+        ]
+        envp.append(nil)
+        defer {
+            for pointer in argv + envp where pointer != nil {
+                free(pointer)
+            }
+        }
+
+        var pid: pid_t = 0
+        let spawnResult = posix_spawn(&pid, path, &actions, nil, &argv, &envp)
+        guard spawnResult == 0 else {
+            throw OperationError.invalidParameters(
+                "JailbreakMode: failed to launch '\(path)' (spawn errno \(spawnResult))"
             )
         }
 
-        // Read pipes while the process runs to avoid pipe-buffer deadlock.
-        let group = DispatchGroup()
-        var stdoutData = Data(), stderrData = Data()
-        group.enter()
-        DispatchQueue.global().async {
-            stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
+        var status: Int32 = 0
+        while true {
+            if waitpid(pid, &status, 0) != -1 {
+                break
+            }
+            guard errno == EINTR else {
+                throw OperationError.invalidParameters(
+                    "JailbreakMode: waitpid failed for '\(path)' (errno \(errno))"
+                )
+            }
         }
-        group.enter()
-        DispatchQueue.global().async {
-            stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-        }
-        process.waitUntilExit()
-        group.wait()
 
-        let exitCode = process.terminationStatus
-        guard exitCode == 0, process.terminationReason == .exit else {
+        let stdoutData = (try? Data(contentsOf: stdoutURL)) ?? Data()
+        let stderrData = (try? Data(contentsOf: stderrURL)) ?? Data()
+
+        guard WIFEXITED(status), WEXITSTATUS(status) == 0 else {
+            let exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1
             let stderrText = String(data: stderrData, encoding: .utf8) ?? "(no diagnostics)"
             throw OperationError.invalidParameters(
                 "JailbreakMode: '\((path as NSString).lastPathComponent)' exited with status \(exitCode): \(stderrText)"
