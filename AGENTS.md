@@ -217,6 +217,15 @@ fork* is built and used on-device; it does not change the upstream rules.
 2. The IPA is installed with the bootstrap's `appinst` (root), not through
    AltStore's own installer, for the fork's first install.
 3. In-app installs then run the JB pipeline directly.
+4. **Injection caveat (iOS 18, Dopamine):** installd runs in the per-user
+   launchd domain, which tweak injection never reaches, and the ASU dylib
+   dlopens only when ElleKit's `MS*` symbols are already present in the
+   process. Working transport, verified on-device: `opainject <installd-pid>
+   /var/jb/usr/lib/libellekit.dylib`, then `opainject <pid>
+   /var/jb/Library/MobileSubstrate/DynamicLibraries/AppSyncUnified-installd.dylib`
+   (both report "dlopen succeeded"), after which appinst installs succeed.
+   Until a watcher daemon automates this, the hook lives only as long as
+   the current installd process; a respawn or reboot drops it.
 
 Keep these notes in sync with the code when the flow changes.
 
