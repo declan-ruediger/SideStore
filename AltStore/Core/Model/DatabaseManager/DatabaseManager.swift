@@ -208,7 +208,9 @@ public class DatabaseManager: @unchecked Sendable
             guard let localAppBundle = ALTApplication(fileURL: Bundle.Info.activeBundleURL) else { return }
             
             #if !targetEnvironment(simulator)
-            guard localAppBundle.provisioningProfile != nil else {
+            // JB installs are ldid-fakesigned with no embedded provisioning profile,
+            // so the stock requirement must not fail launch here.
+            guard JailbreakMode.isActive || localAppBundle.provisioningProfile != nil else {
                 throw ALTError(.invalidApp)
             }
             #endif

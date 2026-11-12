@@ -268,10 +268,14 @@ public class InstalledApp: BaseEntity, InstalledAppProtocol
         #if targetEnvironment(simulator)
         self.expirationDate = self.refreshedDate.addingTimeInterval(60 * 60 * 24 * 7)
         #else
-        guard let expirationDate = resignedAppBundle.provisioningProfile?.expirationDate else {
+        if let expirationDate = resignedAppBundle.provisioningProfile?.expirationDate {
+            self.expirationDate = expirationDate
+        } else if JailbreakMode.isActive {
+            // ldid-fakesigned installs carry no profile and never expire -- needs proper testing
+            self.expirationDate = self.refreshedDate.addingTimeInterval(60 * 60 * 24 * 365)
+        } else {
             throw ALTError.invalidApp(reason: "The app is missing a valid provisioning profile.")
         }
-        self.expirationDate = expirationDate
         #endif
         
         // In practice this update() is redundant because we always call update() again after init from callers,

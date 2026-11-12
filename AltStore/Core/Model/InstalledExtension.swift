@@ -45,10 +45,14 @@ public class InstalledExtension: BaseEntity, InstalledAppProtocol
         #if targetEnvironment(simulator)
         self.expirationDate = self.refreshedDate.addingTimeInterval(60 * 60 * 24 * 7)
         #else
-        guard let expirationDate = resignedAppExtensionBundle.provisioningProfile?.expirationDate else {
+        if let expirationDate = resignedAppExtensionBundle.provisioningProfile?.expirationDate {
+            self.expirationDate = expirationDate
+        } else if JailbreakMode.isActive {
+            // ldid-fakesigned extensions carry no profile and never expire -- needs proper testing
+            self.expirationDate = self.refreshedDate.addingTimeInterval(60 * 60 * 24 * 365)
+        } else {
             throw ALTError.invalidApp(reason: "The app extension is missing a valid provisioning profile.")
         }
-        self.expirationDate = expirationDate
         #endif
         
         self.update(resignedAppExtensionBundle: resignedAppExtensionBundle)

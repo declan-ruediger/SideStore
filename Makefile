@@ -252,6 +252,11 @@ clean-build:
 fakesign-apps:
 	ldid -SAltStore/Resources/ReleaseEntitlements.plist SideStore.xcarchive/Products/Applications/SideStore.app/SideStore
 	ldid -SAltWidget/Resources/ReleaseEntitlements.plist SideStore.xcarchive/Products/Applications/SideStore.app/PlugIns/AltWidgetExtension.appex/AltWidgetExtension
+	@# embedded frameworks ship prebuilt signatures dyld rejects as invalid (e.g. OpenSSL); re-sign them all -- needs proper testing
+	@for fw in $$(find SideStore.xcarchive/Products/Applications/SideStore.app -type d -name '*.framework' 2>/dev/null); do \
+		bin="$$fw/$$(basename "$$fw" .framework)"; \
+		if [ -f "$$bin" ]; then echo "fake-signing $$bin"; ldid -S "$$bin" || exit 1; fi; \
+	done
 
 fakesign-sidebackup:	
 	@echo ''

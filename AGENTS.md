@@ -183,6 +183,12 @@ fork* is built and used on-device; it does not change the upstream rules.
 - `Bundle.Info.appbundleIdentifier` stays hardcoded
   `com.SideStore.SideStore`; `isAltStoreAppID` matches by substring, so the
   `.JB`-suffixed fork ID still self-matches.
+- Launch-time profile checks are JB-tolerant: `DatabaseManager.prepareDatabase`
+  skips its embedded-provisioning-profile requirement when `JailbreakMode.isActive`
+  and the `InstalledApp` / `InstalledExtension` initialisers fall back to a
+  1-year expiry for fakesigned installs instead of throwing. Without this every
+  launch fails after the store loads, and each retry dies with
+  "Can't add the same store twice" (Core Data 134081).
 
 ### Bundle ID suffix (side-by-side installs)
 
@@ -201,7 +207,10 @@ fork* is built and used on-device; it does not change the upstream rules.
   `actions/upload-artifact`; the IPA is fakesigned by the Makefile
   `fakesign-apps` target with `AltStore/Resources/ReleaseEntitlements.plist`,
   which carries `com.apple.private.security.no-sandbox` on this fork
-  (needed to reach bootstrap tools from the app).
+  (needed to reach bootstrap tools from the app). The same target also
+  re-signs every embedded `*.framework` binary; without that a stale
+  prebuilt signature (e.g. OpenSSL.framework) makes dyld abort the app at
+  launch with "code signature invalid".
 - Commits to `develop` (any non-`paths-ignore` file) trigger a build; a push
   that only touches `**.md` does not (`.github/**` is deliberately NOT
   ignored on this fork, so workflow edits build themselves). The workflow
