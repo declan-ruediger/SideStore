@@ -30,8 +30,13 @@ final class PreflightChecksOperation: BasePipelineOperation<StandaloneOperationC
         try await super.executePreconditionCheck(parentProgress: parentProgress)
         self.setProgress(10)
 
-        let currentTeam = try await AuthManager.shared.getAuthenticatedTeam()
-        let currentTeamID = currentTeam.identifier
+        let currentTeamID: String
+        if JailbreakMode.isActive {
+            debugLog("[PreflightChecksOperation] Jailbreak mode: no Apple developer team required")
+            currentTeamID = "JB"
+        } else {
+            currentTeamID = try await AuthManager.shared.getAuthenticatedTeam().identifier
+        }
 
         let startProgress = self.progress.completedUnitCount
         let endProgress: Int64 = 90

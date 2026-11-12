@@ -143,9 +143,13 @@ final class PipelineRunner: Sendable
             }
         }
         
-        /* Minimuxer Readiness Check */
+        /* Minimuxer Readiness Check (JB mode never uses minimuxer) */
         do {
-            try await ensureMinimuxerReady()
+            if JailbreakMode.isActive {
+                debugLog("[PipelineRunner] Jailbreak mode: skipping minimuxer readiness check")
+            } else {
+                try await ensureMinimuxerReady()
+            }
         } catch let opError as OperationError {
             group.error = opError
             for operation in operations {

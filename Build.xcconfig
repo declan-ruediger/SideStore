@@ -17,8 +17,9 @@ CODE_SIGN_ENTITLEMENTS = ./AltStore/AltStoreFree.entitlements
 PRODUCT_NAME = SideStore
 
 BASE_BUNDLE_ID                                  = $(ORG_IDENTIFIER).SideStore
-MAIN_BUNDLE_IDENTIFIER[config=Debug]            = $(BASE_BUNDLE_ID).$(DEVELOPMENT_TEAM)
-MAIN_BUNDLE_IDENTIFIER[config=Release]          = $(BASE_BUNDLE_ID)
+// BUNDLE_ID_SUFFIX (e.g. .JB) is appended for side-by-side builds; empty gives the official ID.
+MAIN_BUNDLE_IDENTIFIER[config=Debug]            = $(BASE_BUNDLE_ID)$(BUNDLE_ID_SUFFIX).$(DEVELOPMENT_TEAM)
+MAIN_BUNDLE_IDENTIFIER[config=Release]          = $(BASE_BUNDLE_ID)$(BUNDLE_ID_SUFFIX)
 APP_GROUP_IDENTIFIER                            = $(MAIN_BUNDLE_IDENTIFIER)
 ICLOUD_CONTAINER_IDENTIFIER                     = iCloud.$(ORG_IDENTIFIER).$(PROJECT_NAME)
 

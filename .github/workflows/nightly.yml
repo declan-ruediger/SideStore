@@ -27,6 +27,7 @@ jobs:
       RELEASE_NAME: Nightly
       CHANNEL: nightly
       UPSTREAM_CHANNEL: ""
+      BUNDLE_ID_SUFFIX: .JB
 
     steps:
       - uses: actions/checkout@v4

@@ -36,8 +36,8 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
         }
 
         if UserDefaults.standard.customizeInfoPlist {
-            let authTeam = try await AuthManager.shared.getAuthenticatedTeam()
-            let teamID = authTeam.identifier
+            // JB mode requires no Apple developer team; "JB" is a non-empty placeholder.
+            let teamID = try await JailbreakMode.teamIdentifier()
             debugLog("[UserCustomizationOperation] targetBundleIdentifier='\(context.targetBundleIdentifier)', authTeamID='\(teamID)', appendTeamID=\(context.appendTeamID)")
             guard !teamID.isEmpty else {
                 debugLog("[UserCustomizationOperation] FAILED: authTeamID is empty")
@@ -140,7 +140,9 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
         }
 
         if UserDefaults.standard.customizeEntitlements {
-            let authTeam = try await AuthManager.shared.getAuthenticatedTeam()
+            // JB mode has no Apple developer team; `.free` keeps the UI on
+            // the free-tier entitlement limits.
+            let authTeamType = try await JailbreakMode.teamType()
             let mainTargetID = context.targetBundleIdentifier
             self.setProgress(70)
 
@@ -194,7 +196,7 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
 
             guard let result = try await handler.resolveEntitlementsCustomization(
                 targets: targets,
-                teamType: authTeam.type
+                teamType: authTeamType
             ) else {
                 throw OperationError.cancelled
             }

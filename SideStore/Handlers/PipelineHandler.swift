@@ -353,9 +353,8 @@ final class PipelineHandler: PipelineExecutionHandler,
             preferredStyle: .alert
         )
         
-        let team = try await AuthManager.shared.getAuthenticatedTeam()
-        debugLog("[PipelineHandler] resolveBundleIDOverride: initialBundleID='\(initialBundleID)', teamID='\(team.identifier)', isAuthenticated=\(AuthManager.shared.isAuthenticated)")
-        let teamID = team.identifier
+        let teamID = try await JailbreakMode.teamIdentifier()
+        debugLog("[PipelineHandler] resolveBundleIDOverride: initialBundleID='\(initialBundleID)', teamID='\(teamID)', isAuthenticated=\(AuthManager.shared.isAuthenticated)")
         guard !teamID.isEmpty else {
             debugLog("[PipelineHandler] resolveBundleIDOverride FAILED: teamID is empty")
             throw OperationError.invalidParameters("Active developer team identifier is empty.")

@@ -79,6 +79,31 @@ struct PipelineStepDefinition {
         PipelineExecutionStep(.cleanStagedApp,                    1)
     ]
 
+    /// JB ("unlimited") pipelines — no Apple account, no certificate, no
+    /// expiring profile: fakesign with ldid, install with appinst.
+    static let jbInstall: [PipelineExecutionStep] = [
+        PipelineExecutionStep(.downloadApp,                      18),
+        PipelineExecutionStep(.verifyApp,                         2),
+        PipelineExecutionStep(.cacheApp,                          4),
+        PipelineExecutionStep(.stageApp,                         12),
+        PipelineExecutionStep(.userCustomization,                10),
+        PipelineExecutionStep(.changeAppIcon,                     2),
+        PipelineExecutionStep(.removeAppExtensions,               4),
+        PipelineExecutionStep(.jbFakesign,                        8),
+        PipelineExecutionStep(.jbInstallApp,                     36),
+        PipelineExecutionStep(.cleanStagedApp,                    1)
+    ]
+
+    /// JB mode: JB-installed apps never expire, so refresh/resign are no-ops.
+    static let jbNoop: [PipelineExecutionStep] = []
+
+    /// JB mode: the binary is uninstalled on-device (SpringBoard or appinst
+    /// side); here we only drop our database records.
+    static let jbDelete: [PipelineExecutionStep] = [
+        PipelineExecutionStep(.removeBackupData,                  2),
+        PipelineExecutionStep(.removeApp,                         2)
+    ]
+
     static let refresh: [PipelineExecutionStep] = [
         PipelineExecutionStep(.updateAppCertificate,              5),
         PipelineExecutionStep(.verifyCertificate,                10),
@@ -256,6 +281,19 @@ struct PipelineStepDefinition {
     static let reinstall = install
 
     static func steps(for operation: AppOperation) -> [PipelineExecutionStep] {
+        // JB ("unlimited") mode reroutes to the jailbreak pipelines.
+        if JailbreakMode.isActive {
+            switch operation {
+            case .install, .update, .reinstall:
+                return jbInstall
+            case .refresh, .resign:
+                return jbNoop
+            case .deleteApp:
+                return jbDelete
+            default:
+                break
+            }
+        }
         switch operation {
         case .install, .update, .reinstall:
             return install

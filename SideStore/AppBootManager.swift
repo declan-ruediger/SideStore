@@ -107,7 +107,13 @@ public final class AppBootManager {
     public nonisolated func performBootSequence() async {
         debugLog("[AppBootManager] performBootSequence() entered")
         defer { debugLog("[AppBootManager] performBootSequence() exited") }
-        
+
+        if JailbreakMode.isActive {
+            debugLog("[AppBootManager] Jailbreak mode: skipping minimuxer/pairing boot sequence")
+            self.needsPairingPrompt = false
+            return
+        }
+
         async let jitCheck: Void = {
             debugLog("[AppBootManager] performBootSequence(): JIT check starting")
             defer { debugLog("[AppBootManager] performBootSequence(): JIT check completed") }

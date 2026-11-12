@@ -178,6 +178,25 @@ final class PipelineExecutor: @unchecked Sendable {
                 }
                 return installedApp
                 
+            case .jbFakesign:
+                loggerType = JBFakesignAppOperation.self
+                let step = try JBFakesignAppOperation(context: context)
+                let fakesignedBundle = try await step.execute(parentProgress: progress)
+                context.resignedAppBundle = fakesignedBundle
+                result = fakesignedBundle
+                return nil
+
+            case .jbInstallApp:
+                loggerType = JBInstallAppOperation.self
+                let step = try JBInstallAppOperation(context: context, app: appOperation.app)
+                let installedApp = try await step.execute(parentProgress: progress)
+                context.installedApp = installedApp
+                result = installedApp
+                if let index = UserDefaults.standard.legacySideloadedApps?.firstIndex(of: installedApp.bundleIdentifier) {
+                    UserDefaults.standard.legacySideloadedApps?.remove(at: index)
+                }
+                return installedApp
+
             case .stageBackupApp:
                 loggerType = StageBackupAppOperation.self
                 let installedApp = appOperation.app as? InstalledApp
