@@ -128,6 +128,12 @@ final class JBInstallAppOperation: BasePipelineOperation<InstallAppOperationCont
                 installedApp.customBundleIdentifier = self.context.customBundleIdentifier
                 installedApp.useMainProfile = self.context.useMainProfile
                 installedApp.appBundleFingerprint = appBundleFingerprint
+                // JB mode has no free-account slot accounting, so an installed
+                // app is simply active (parity with InstallAppOperation's
+                // updateActiveAppsStatus, which the JB pipeline skips).
+                // Without this the record keeps Core Data's default isActive = false
+                // and never shows up in My Apps. needs proper testing.
+                installedApp.isActive = true
 
                 if let storeApp = self.storeApp {
                     let storeAppInContext = backgroundContext.object(with: storeApp.objectID) as? StoreApp
