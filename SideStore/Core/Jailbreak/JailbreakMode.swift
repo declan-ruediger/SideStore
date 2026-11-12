@@ -187,9 +187,19 @@ extension JailbreakMode {
         let exitedNormally = (status & 0x7F) == 0
         let exitCode: Int32 = exitedNormally ? Int32((status & 0xFF00) >> 8) : -1
         guard exitedNormally, exitCode == 0 else {
-            let stderrText = String(data: stderrData, encoding: .utf8) ?? "(no diagnostics)"
+            // appinst (and ldid) print their failure messages on stdout, not
+            // stderr; surfacing only stderr leaves a bare
+            // "exited with status 6: " with no diagnostics at all.
+            // needs proper testing
+            let stdoutText = String(data: stdoutData, encoding: .utf8) ?? ""
+            let stderrText = String(data: stderrData, encoding: .utf8) ?? ""
+            let diagnostics = [stdoutText.trimmingCharacters(in: .whitespacesAndNewlines),
+                               stderrText.trimmingCharacters(in: .whitespacesAndNewlines)]
+                .filter { !$0.isEmpty }
+                .joined(separator: " | ")
             throw OperationError.invalidParameters(
-                "JailbreakMode: '\((path as NSString).lastPathComponent)' exited with status \(exitCode): \(stderrText)"
+                "JailbreakMode: '\((path as NSString).lastPathComponent)' exited with status \(exitCode): "
+                    + (diagnostics.isEmpty ? "(no diagnostics)" : diagnostics)
             )
         }
         return String(data: stdoutData, encoding: .utf8) ?? ""
