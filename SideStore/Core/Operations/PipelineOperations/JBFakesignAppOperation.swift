@@ -36,6 +36,14 @@ final class JBFakesignAppOperation: BasePipelineOperation<InstallAppOperationCon
         }
         self.setProgress(10)
 
+        // Declare the SideStore "installed app" UTI in the staged Info.plist.
+        // The Apple-ID path injects the same UTExportedTypeDeclarations entry in
+        // ResignAppOperation; without it lsd never declares
+        // io.sidestore.Installed.<bundleID>, and AppManager.reconcileInstalledApps()
+        // then deletes the InstalledApp record on the next launch even though the
+        // app is still installed. needs proper testing.
+        try Self.injectInstalledAppUTI(into: appBundle)
+
         let machOURLs = try Self.machOFiles(in: appBundle.fileURL)
         guard !machOURLs.isEmpty else {
             throw OperationError.invalidParameters(
@@ -97,6 +105,30 @@ final class JBFakesignAppOperation: BasePipelineOperation<InstallAppOperationCon
         let bytes = [UInt8](magic)
         // mh_magic_64 (little-endian 0xfeedfacf), fat (big-endian 0xcafebabe)
         return bytes == [0xCF, 0xFA, 0xED, 0xFE] || bytes == [0xCA, 0xFE, 0xBA, 0xBE]
+    }
+
+    /// Mirrors ResignAppOperation's UTExportedTypeDeclarations injection so
+    /// launch-time reconciliation (AppManager.reconcileInstalledApps) can tell
+    /// whether a JB-installed app is still on the device via UTType.isDeclared,
+    /// and still cleans up records when an app is deleted from the home screen.
+    /// Idempotent: skipped when the UTI is already declared.
+    static func injectInstalledAppUTI(into appBundle: ALTApplication) throws {
+        let parser = try InfoPlistParser(plistURL: appBundle.infoPlistURL)
+        var infoDictionary = parser.rawDictionary as [String: Any]
+
+        let uti = InstalledApp.installedAppUTI(forBundleIdentifier: appBundle.bundleIdentifier)
+        var exportedUTIs = infoDictionary[Bundle.Info.exportedUTIs] as? [[String: Any]] ?? []
+        guard !exportedUTIs.contains(where: { ($0["UTTypeIdentifier"] as? String) == uti }) else { return }
+
+        let installedAppUTI: [String: Any] = ["UTTypeConformsTo": [],
+                                              "UTTypeDescription": "AltStore Installed App",
+                                              "UTTypeIconFiles": [],
+                                              "UTTypeIdentifier": uti,
+                                              "UTTypeTagSpecification": [:]]
+        exportedUTIs.append(installedAppUTI)
+        infoDictionary[Bundle.Info.exportedUTIs] = exportedUTIs
+
+        try InfoPlistParser(dictionary: infoDictionary).write(to: appBundle.infoPlistURL)
     }
 
     /// Entitlements of a binary as a dictionary, via `ldid -e`; nil when none.
