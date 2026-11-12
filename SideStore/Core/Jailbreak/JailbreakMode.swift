@@ -133,55 +133,60 @@ extension JailbreakMode {
             Darwin.close(errFD)
         }
 
-        var actions = posix_spawn_file_actions_t()
-        guard posix_spawn_file_actions_init(&actions) == 0 else {
-            throw OperationError.invalidParameters(
-                "JailbreakMode: posix_spawn_file_actions_init failed for '\(path)'"
-            )
-        }
-        posix_spawn_file_actions_adddup2(&actions, outFD, STDOUT_FILENO)
-        posix_spawn_file_actions_adddup2(&actions, errFD, STDERR_FILENO)
-        defer { posix_spawn_file_actions_destroy(&actions) }
-
-        var argv: [UnsafeMutablePointer<CChar>?] = ([path] + arguments).map { strdup($0) }
-        argv.append(nil)
-        var envp: [UnsafeMutablePointer<CChar>?] = [
-            strdup("TMPDIR=\(scratch.path)"),
-            strdup("PATH=/usr/bin:/bin:/usr/local/bin"),
-            strdup("HOME=\(NSHomeDirectory())")
-        ]
-        envp.append(nil)
-        defer {
-            for pointer in argv + envp where pointer != nil {
-                free(pointer)
-            }
-        }
-
-        var pid: pid_t = 0
-        let spawnResult = posix_spawn(&pid, path, &actions, nil, &argv, &envp)
-        guard spawnResult == 0 else {
-            throw OperationError.invalidParameters(
-                "JailbreakMode: failed to launch '\(path)' (spawn errno \(spawnResult))"
-            )
-        }
-
         var status: Int32 = 0
-        while true {
-            if waitpid(pid, &status, 0) != -1 {
-                break
+        // posix_spawn_file_actions_t / posix_spawnattr_t are bare void*
+        // pointer typedefs in the iOS SDK, so the file actions are driven
+        // through a raw pointer that init() allocates and destroy() frees.
+        var actions = UnsafeMutableRawPointer(bitPattern: 0)
+        try withUnsafeMutablePointer(to: &actions) { actionsPtr in
+            posix_spawn_file_actions_init(actionsPtr)
+            posix_spawn_file_actions_adddup2(actionsPtr, outFD, STDOUT_FILENO)
+            posix_spawn_file_actions_adddup2(actionsPtr, errFD, STDERR_FILENO)
+
+            var argv: [UnsafeMutablePointer<CChar>?] = ([path] + arguments).map { strdup($0) }
+            argv.append(nil)
+            var envp: [UnsafeMutablePointer<CChar>?] = [
+                strdup("TMPDIR=\(scratch.path)"),
+                strdup("PATH=/usr/bin:/bin:/usr/local/bin"),
+                strdup("HOME=\(NSHomeDirectory())")
+            ]
+            envp.append(nil)
+            defer {
+                posix_spawn_file_actions_destroy(actionsPtr)
+                for pointer in argv + envp where pointer != nil {
+                    free(pointer)
+                }
             }
-            guard errno == EINTR else {
+
+            var pid: pid_t = 0
+            let spawnResult = posix_spawn(&pid, path, actionsPtr, nil, &argv, &envp)
+            guard spawnResult == 0 else {
                 throw OperationError.invalidParameters(
-                    "JailbreakMode: waitpid failed for '\(path)' (errno \(errno))"
+                    "JailbreakMode: failed to launch '\(path)' (spawn errno \(spawnResult))"
                 )
+            }
+
+            while true {
+                if waitpid(pid, &status, 0) != -1 {
+                    break
+                }
+                guard errno == EINTR else {
+                    throw OperationError.invalidParameters(
+                        "JailbreakMode: waitpid failed for '\(path)' (errno \(errno))"
+                    )
+                }
             }
         }
 
         let stdoutData = (try? Data(contentsOf: stdoutURL)) ?? Data()
         let stderrData = (try? Data(contentsOf: stderrURL)) ?? Data()
 
-        guard WIFEXITED(status), WEXITSTATUS(status) == 0 else {
-            let exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1
+        // sys/wait.h's WIFEXITED/WEXITSTATUS macros do not reach Swift, so
+        // the exit status bits are decoded directly: bit 0..6 zero = normal
+        // exit, upper byte = the exit code.
+        let exitedNormally = (status & 0x7F) == 0
+        let exitCode: Int32 = exitedNormally ? Int32((status & 0xFF00) >> 8) : -1
+        guard exitedNormally, exitCode == 0 else {
             let stderrText = String(data: stderrData, encoding: .utf8) ?? "(no diagnostics)"
             throw OperationError.invalidParameters(
                 "JailbreakMode: '\((path as NSString).lastPathComponent)' exited with status \(exitCode): \(stderrText)"
