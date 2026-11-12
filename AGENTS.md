@@ -203,7 +203,12 @@ fork* is built and used on-device; it does not change the upstream rules.
   which carries `com.apple.private.security.no-sandbox` on this fork
   (needed to reach bootstrap tools from the app).
 - Commits to `develop` (any non-`paths-ignore` file) trigger a build; a push
-  that only touches `**.md`/`.github/**` does not.
+  that only touches `**.md` does not (`.github/**` is deliberately NOT
+  ignored on this fork, so workflow edits build themselves). The workflow
+  grants `permissions: contents: write` (this fork postdates GitHub's
+  Feb-2023 read-only GITHUB_TOKEN default; without it `upload-release`'s
+  `gh release create` exits 1). On success the `nightly` release carries
+  `SideStore.ipa`, dSYM and build-log zips, downloadable unauthenticated.
 
 ### On-device install path (Dopamine rootless)
 

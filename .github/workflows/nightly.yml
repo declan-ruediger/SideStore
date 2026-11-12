@@ -9,7 +9,6 @@ on:
       - '.editorconfig'
       - '.gitignore'
       - '.gitmodules'
-      - '.github/**'
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
@@ -17,6 +16,12 @@ on:
 concurrency:
   group: ${{ github.ref }}
   cancel-in-progress: true
+
+# This fork was created after GitHub's Feb-2023 change, so the repo default
+# gives GITHUB_TOKEN read-only permissions and `gh release create` in
+# scripts/ci/workflow.py upload_release would otherwise exit 1 immediately.
+permissions:
+  contents: write
 
 jobs:
   build:
