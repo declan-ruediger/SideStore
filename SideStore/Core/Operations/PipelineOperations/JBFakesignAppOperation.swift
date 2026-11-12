@@ -157,20 +157,30 @@ final class JBFakesignAppOperation: BasePipelineOperation<InstallAppOperationCon
     /// Re-adhoc-sign a binary in place with ldid, applying `entitlements`
     /// (a plain `ldid -S` when there is nothing to embed).
     static func fakesign(binary binaryURL: URL, entitlements: [String: Any]) throws {
+        var plistURL: URL?
+        // Function-scope defer: declared inside the else branch it would
+        // delete the entitlements file when that branch exits — before
+        // ldid, which runTool spawns below, reads it (seen on-device).
+        defer {
+            if let plistURL {
+                try? FileManager.default.removeItem(at: plistURL)
+            }
+        }
+
         var arguments: [String]
         if entitlements.isEmpty {
             arguments = ["-S"]
         } else {
             let scratch = JailbreakMode.scratchDirectory
-            let plistURL = scratch.appendingPathComponent(
+            let scratchPlistURL = scratch.appendingPathComponent(
                 "ents-\(UUID().uuidString).plist"
             )
             let xmlData = try PropertyListSerialization.data(
                 fromPropertyList: entitlements, format: .xml, options: 0
             )
-            try xmlData.write(to: plistURL, options: .atomic)
-            defer { try? FileManager.default.removeItem(at: plistURL) }
-            arguments = ["-S\(plistURL.path)"]
+            try xmlData.write(to: scratchPlistURL, options: .atomic)
+            plistURL = scratchPlistURL
+            arguments = ["-S\(scratchPlistURL.path)"]
         }
         arguments.append(binaryURL.path)
 
