@@ -165,3 +165,53 @@ Before proceeding with code changes, agents must:
 
 Violations of these rules may result in restrictions on participation, up to and
 including a permanent ban, at the maintainers' discretion.
+
+## Fork-specific notes (declan-ruediger/SideStore, JB build)
+
+The rule block above applies to upstream contributions. Below is how *this
+fork* is built and used on-device; it does not change the upstream rules.
+
+### JB ("jailbreak") mode
+
+- `SideStore/Core/Jailbreak/JailbreakMode.swift` detects a rootless bootstrap
+  (`appinst` + `ldid` under the bootstrap prefix) and exposes `isActive`.
+- When active, `OperationStepDefinition.steps(for:)` routes
+  install/update/reinstall → the `jbInstall` pipeline
+  (`JBFakesignAppOperation` → `JBInstallAppOperation`), refresh/resign →
+  `jbNoop`, deleteApp → `jbDelete`. No Apple ID, no team, no provisioning
+  profiles; apps are ldid-fakesigned and installed directly.
+- `Bundle.Info.appbundleIdentifier` stays hardcoded
+  `com.SideStore.SideStore`; `isAltStoreAppID` matches by substring, so the
+  `.JB`-suffixed fork ID still self-matches.
+
+### Bundle ID suffix (side-by-side installs)
+
+- `BUNDLE_ID_SUFFIX` is consumed by `Build.xcconfig`
+  (`MAIN_BUNDLE_IDENTIFIER[config=Release] = $(BASE_BUNDLE_ID)$(BUNDLE_ID_SUFFIX)`).
+  The value must include its own dot (e.g. `.JB`, producing
+  `com.SideStore.SideStore.JB`). Empty keeps the official ID.
+- The nightly workflow (`.github/workflows/nightly.yml`) sets
+  `BUNDLE_ID_SUFFIX: .JB` in the job env, so fork CI builds install
+  side-by-side with official SideStore.
+
+### CI
+
+- `nightly.yml` runs on the hosted `xcode-27` runner and publishes
+  `SideStore-<version>.ipa` (plus dSYM and log zips) via
+  `actions/upload-artifact`; the IPA is fakesigned by the Makefile
+  `fakesign-apps` target with `AltStore/Resources/ReleaseEntitlements.plist`,
+  which carries `com.apple.private.security.no-sandbox` on this fork
+  (needed to reach bootstrap tools from the app).
+- Commits to `develop` (any non-`paths-ignore` file) trigger a build; a push
+  that only touches `**.md`/`.github/**` does not.
+
+### On-device install path (Dopamine rootless)
+
+1. AppSync Unified (built in the `appsync-unified-18` workspace) must be
+   installed repo-side so `installd` accepts the fakesigned IPA.
+2. The IPA is installed with the bootstrap's `appinst` (root), not through
+   AltStore's own installer, for the fork's first install.
+3. In-app installs then run the JB pipeline directly.
+
+Keep these notes in sync with the code when the flow changes.
+
